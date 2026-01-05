@@ -1,0 +1,56 @@
+{
+  "name": "arunacore-api",
+  "version": "1.0.0-BETA.6",
+  "description": "ArunaCore is an open source websocket server made with nodejs for intercomunication between applications.",
+  "main": "build/src/index.js",
+  "types": "build/src/index.d.ts",
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "start": "npm run build && node build/",
+    "build": "npx tsc -p .",
+    "postbuild": "node ./scripts/postBuild.cjs",
+    "prepack": "npm run build",
+    "lint": "eslint ./src --fix",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArunaBot/ArunaCore-js-api.git"
+  },
+  "author": "Hugo Heger (LoboMetalurgico)",
+  "contributors": [
+    "SpaceFox1"
+  ],
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/ArunaBot/ArunaCore-js-api/issues"
+  },
+  "keywords": [
+    "management",
+    "aruna",
+    "websocket",
+    "api"
+  ],
+  "homepage": "https://github.com/ArunaBot/ArunaCore-js-api#readme",
+  "engines": {
+    "node": ">=20.11.1"
+  },
+  "dependencies": {
+    "@promisepending/logger.js": "^1.1.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.39.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.2",
+    "@typescript-eslint/parser": "^8.46.2",
+    "eslint": "^9.39.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^7.2.1",
+    "typescript": "^5.9.3"
+  }
+}
