@@ -21,9 +21,8 @@ jobs:
       - name: Setup .npmrc (NPM)
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
-          scope: '@arunabot'
 
       - name: Get Current version
         id: current_version
@@ -44,4 +43,4 @@ jobs:
 
       - name: Publish to npm
         if: ${{ steps.compare_versions.outputs.skip != 'true' }}
-        run: npm publish --provenance --access public
+        run: npm publish --tag latest
