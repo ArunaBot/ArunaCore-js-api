@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@promisepending/logger.js": "^1.1.1",
-    "ws": "^8.18.3"
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
