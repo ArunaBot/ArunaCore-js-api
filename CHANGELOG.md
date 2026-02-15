@@ -1,3 +1,8 @@
+## [1.0.0-BETA.7]
+
+### Changed
+- Added readme file with basic usage instructions and API overview.
+
 ## [1.0.0-BETA.6]
 
 ### Changed
