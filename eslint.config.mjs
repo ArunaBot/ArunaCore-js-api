@@ -23,8 +23,7 @@ export default [{
 ),
 {
   plugins: {
-    '@typescript-eslint': typescriptEslint,
-    'header': header
+    '@typescript-eslint': typescriptEslint
   },
   languageOptions: {
     globals: {

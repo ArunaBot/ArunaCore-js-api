@@ -1,8 +1,25 @@
+/*
+  Copyright 2023-2026 Hugo Heger (LoboMetalurgico)
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
 import { IMessage, IReconnectionOptions, IWebsocketOptions } from '../interfaces';
 import { setTimeout, setInterval, clearInterval, clearTimeout } from 'timers';
 import { Logger } from '@promisepending/logger.js';
 import { version } from '../resources/version';
 import { WebSocketParser, utils } from '../';
+import { ConflictError } from '../errors';
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
 import ws from 'ws';
@@ -51,8 +68,10 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
   private reconnectionConfig: IReconnectionOptions = { enabled: true, maxAttempts: -1, delay: 5000 };
   private reconnectionLoop: ReturnType<typeof setInterval> | null = null;
   private finishTimeout: ReturnType<typeof setTimeout> | null = null;
+  private intentionalDisconnect: boolean = false;
+  private securityKey: string | null = null;
   private reconnectionAttempts: number = 0;
-  private secureKey: string | null = null;
+  private isConnecting: boolean = false;
   private ws: ws | null = null;
   private secureMode: boolean;
   private shardMode: boolean;
@@ -72,7 +91,7 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
 
     if (this.secureMode) {
       if (options.secureKey == null) throw new Error('Secure key is required for secure mode!');
-      this.secureKey = options.secureKey;
+      this.securityKey = options.secureKey;
     }
 
     this.shardMode = options.shardMode ?? false;
@@ -90,13 +109,62 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
    */
   public async connect(secureKey?: string): Promise<void> {
     if (secureKey) {
-      this.secureKey = secureKey;
+      this.securityKey = secureKey;
       this.secureMode = true;
     }
 
+    this.isConnecting = true;
+    try {
+      await this.connectInternal();
+    } catch (err: any) {
+      if ((err.code === 'ECONNREFUSED' || err instanceof ConflictError) && this.reconnectionConfig.enabled) {
+        this.logger.warn(`Cannot connect to server. Retrying in ${this.reconnectionConfig.delay}ms...`);
+        if (err instanceof ConflictError) {
+          this.id = this.id + utils.randomString(5);
+        }
+        await this.startReconnectionLoop();
+        this.isConnecting = false;
+        return;
+      }
+      this.isConnecting = false;
+      throw err;
+    }
+    this.isConnecting = false;
+  }
+
+  private async startReconnectionLoop(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (this.reconnectionLoop) return resolve();
+
+      this.reconnectionLoop = setInterval(async () => {
+        this.ws?.terminate();
+        this.ws?.removeAllListeners();
+        this.ws = null;
+        if (this.reconnectionConfig.maxAttempts !== -1 && this.reconnectionAttempts >= this.reconnectionConfig.maxAttempts!) {
+          this.stopReconnectionLoop();
+          return reject(new Error('Max reconnection attempts reached'));
+        }
+
+        this.reconnectionAttempts += 1;
+        this.logger.info(`Reconnection attempt ${this.reconnectionAttempts}...`);
+
+        try {
+          await this.connectInternal();
+          this.logger.info('Reconnected successfully!');
+          this.reconnectionAttempts = 0;
+          this.stopReconnectionLoop();
+          return resolve();
+        } catch {
+          this.logger.error(`Reconnection attempt ${this.reconnectionAttempts} failed`);
+        }
+      }, this.reconnectionConfig.delay);
+    });
+  }
+
+  private async connectInternal(): Promise<void> {
     this.ws = new ws(`ws://${this.host}:${this.port}`, {
       headers: {
-        'Authorization': this.secureKey ?? '',
+        'Authorization': this.securityKey ?? '',
         'ArunaCore-API-Version': version,
         'Client-ID': this.id,
       },
@@ -105,18 +173,24 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
     return new Promise((resolve, reject) => {
       this.ws!.on('message', (message) => { this.onMessage(message.toString()); });
 
-      this.ws!.on('close', (code, reason) => { this.emit('close', code, reason.toString()); });
+      this.ws!.on('close', (code, reason) => {
+        this.emit('close', code, reason.toString());
+        
+        // Start reconnection if connection was broken unexpectedly and not during initial connection
+        if (!this.intentionalDisconnect && !this.isConnecting && this.reconnectionConfig.enabled && !this.reconnectionLoop) {
+          this.logger.warn('Connection closed unexpectedly. Starting reconnection...');
+          this.startReconnectionLoop().catch((err) => {
+            this.logger.error('Reconnection failed:', err);
+          });
+        }
+      });
 
       this.ws!.on('error', (err: any) => {
-        if (err.code === 'ECONNREFUSED' && this.reconnectionConfig.enabled) {
-          this.logger.warn(`Cannot connect to server. Retrying in ${this.reconnectionConfig.delay}ms...`);
-          this.startReconnectionLoop();
-          return;
-        }
-        this.emit('error', err);
+        return reject(err);
       });
 
       this.ws!.on('open', () => {
+        this.intentionalDisconnect = false;
         this.logger.debug('Connected to server!');
         this.emit('ready');
         return resolve();
@@ -125,52 +199,22 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
       this.ws!.on('unexpected-response', (req, res) => {
         switch (res.statusCode) {
           case 401:
-            this.logger.error('Unauthorized: Invalid secure key!');
             this.ws!.close();
             return reject(new Error('Unauthorized: Invalid secure key!'));
           case 409:
             this.logger.warn('Conflict: Client ID already connected! Randomizing a new one...');
             this.id = this.id + utils.randomString(5);
-            this.startReconnectionLoop();
-            return;
+            this.ws!.close();
+            return reject(new ConflictError());
           case 412:
-            this.logger.error('Precondition Failed: Unsupported API version!');
             this.ws!.close();
             return reject(new Error('Precondition Failed: Unsupported API version!'));
           default:
-            this.logger.error(`Unexpected response: ${res.statusCode}`);
             this.ws!.close();
             return reject(new Error(`Unexpected response: ${res.statusCode}`));
         }
       });
     });
-  }
-
-  private startReconnectionLoop(): void {
-    if (this.reconnectionLoop) return;
-
-    this.reconnectionLoop = setInterval(async () => {
-      this.ws?.terminate();
-      this.ws?.removeAllListeners();
-      this.ws = null;
-      if (this.reconnectionConfig.maxAttempts !== -1 && this.reconnectionAttempts >= this.reconnectionConfig.maxAttempts!) {
-        this.logger.error('Max reconnection attempts reached. Stopping reconnection attempts.');
-        this.stopReconnectionLoop();
-        return;
-      }
-
-      this.reconnectionAttempts += 1;
-      this.logger.info(`Reconnection attempt ${this.reconnectionAttempts}...`);
-
-      try {
-        await this.connect(this.secureKey ?? undefined);
-        this.logger.info('Reconnected successfully!');
-        this.stopReconnectionLoop();
-        this.reconnectionAttempts = 0;
-      } catch (err) {
-        this.logger.error(`Reconnection attempt ${this.reconnectionAttempts} failed:`, err);
-      }
-    }, this.reconnectionConfig.delay);
   }
 
   private stopReconnectionLoop(): void {
@@ -207,8 +251,8 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
         id: this.id,
       };
 
-      if (this.secureMode && this.secureKey == null) return reject(new Error('Secure key is required for secure mode!'));
-      else if (this.secureKey) Object.assign(finalFrom, { key: this.secureKey });
+      if (this.secureMode && this.securityKey == null) return reject(new Error('Secure key is required for secure mode!'));
+      else if (this.securityKey) Object.assign(finalFrom, { key: this.securityKey });
 
       this.ws.send(WebSocketParser.formatToString(finalFrom, content, { type, command, target, args }), (err) => {
         if (err) {
@@ -247,8 +291,8 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
         id: this.id,
       };
 
-      if (this.secureMode && this.secureKey == null) return reject(new Error('Secure key is required for secure mode!'));
-      else if (this.secureKey) Object.assign(finalFrom, { key: this.secureKey });
+      if (this.secureMode && this.securityKey == null) return reject(new Error('Secure key is required for secure mode!'));
+      else if (this.securityKey) Object.assign(finalFrom, { key: this.securityKey });
 
       const onResponse = (message: IMessage): void => {
         if (message.uuid === uuid) {
@@ -305,9 +349,9 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
             id: this.id,
           };
 
-          if (this.secureMode && this.secureKey == null) {
+          if (this.secureMode && this.securityKey == null) {
             return reject(new Error('Secure key is required for secure mode!'));
-          } else if (this.secureKey) Object.assign(finalFrom, { key: this.secureKey });
+          } else if (this.securityKey) Object.assign(finalFrom, { key: this.securityKey });
 
           const finalTarget: { id: string, key?: string } = {
             id: parsedMessage!.from.id,
@@ -402,6 +446,9 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
    */
   public async finish(): Promise<void> {
     return new Promise(async (resolve) => {
+      this.intentionalDisconnect = true;
+      this.stopReconnectionLoop();
+      
       if (this.ws?.readyState !== ws.OPEN) return resolve();
 
       this.once('finish', () => {

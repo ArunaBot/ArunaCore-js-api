@@ -14,4 +14,9 @@
   limitations under the License.
 */
 
-export const version = 'REPLACE_ME';
+export class ConflictError extends Error {
+  constructor() {
+    super('Client ID conflict');
+    this.name = 'ConflictError';
+  }
+}
