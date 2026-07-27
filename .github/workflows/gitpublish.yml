@@ -1,9 +1,7 @@
 name: Publish Tag and Release
 
 on:
-  workflow_run:
-    workflows: [Test]
-    types: [completed]
+  push:
     branches: [main]
 
 jobs:
