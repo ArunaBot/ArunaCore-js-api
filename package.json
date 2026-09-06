@@ -1,6 +1,6 @@
 {
   "name": "arunacore-api",
-  "version": "1.0.0-BETA.7",
+  "version": "1.0.0-BETA.8",
   "description": "ArunaCore is an open source websocket server made with nodejs for intercomunication between applications.",
   "main": "build/src/index.js",
   "types": "build/src/index.d.ts",
@@ -38,19 +38,17 @@
     "node": ">=20.11.1"
   },
   "dependencies": {
-    "@promisepending/logger.js": "1.1.1",
-    "ws": "8.21.0"
+    "@promisepending/logger.js": "1.1.2",
+    "ws": "8.21.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@eslint/js": "^9.39.4",
+    "@types/node": "^26.4.1",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",
     "eslint": "^9.39.4",
-    "eslint-plugin-import": "^2.32.0",
-    "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^7.3.0",
     "typescript": "^6.0.3"
   }
 }

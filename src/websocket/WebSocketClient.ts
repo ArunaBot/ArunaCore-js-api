@@ -20,7 +20,7 @@ import { Logger } from '@promisepending/logger.js';
 import { version } from '../resources/version';
 import { WebSocketParser, utils } from '../';
 import { ConflictError } from '../errors';
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'node:events';
 import { randomUUID } from 'crypto';
 import ws from 'ws';
 
@@ -28,6 +28,7 @@ interface ArunaEvents {
   'ready': [];
   'message': [IMessage];
   'request': [IMessage];
+  'target-not-found': [IMessage];
   'unauthorized': [IMessage];
   'error': [Error];
   'close': [number, string];
@@ -394,6 +395,13 @@ export class ArunaClient extends EventEmitter<ArunaEvents> {
         break;
       case '403':
         this.emit('forbidden', parsedMessage);
+        break;
+      case '404':
+        if (parsedMessage.content === 'target-not-found') {
+          this.emit('target-not-found', parsedMessage);
+        } else {
+          this.emit('message', parsedMessage);
+        }
         break;
       default:
         this.emit('message', parsedMessage);
