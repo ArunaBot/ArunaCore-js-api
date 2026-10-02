@@ -1,3 +1,11 @@
+## [1.0.0-BETA.8]
+
+### Changed
+- Updated internal dependencies.
+
+### Fixed
+- 404 messages are now handled correctly, sending the appropriate `target-not-found` event instead of a regular `message` event, ensuring that clients can respond appropriately to missing nodes or resources.
+
 ## [1.0.0-BETA.7]
 
 ### Changed
